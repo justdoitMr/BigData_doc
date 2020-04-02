@@ -261,6 +261,12 @@ public class FlowBean implements Writable {
 
    数据切片：数据切片只是在逻辑上对输入进行分片，并不会在磁盘上将其切分成片进行存储。
 
+3. maptask的并行度决定map阶段的任务处理并发度，进而影响到整个job的处理速度。那么，mapTask并行任务是否越多越好呢？ 
+
+   MapTask并行度决定机制
+
+   ​	一个job的map阶段MapTask并行度（个数），由客户端提交job时的切片个数决定。
+
 ![](../img/mapreducer_pic/maptesk.png)
 
 
@@ -480,15 +486,628 @@ From the real demand for more close to the enterprise
 ### 3.6，自定义InputFormat
 
 - 在企业开发中，Hadoop框架自带的InputFormat类型不能满足所有应用场景，需要自定义InputFormat来解决实际问题。
+
 - 自定义InputFormat步骤如下：
   - 自定义一个类继承FileInputFormat。
   - 改写RecordReader，实现一次读取一个完整文件封装为KV。
   - 在输出时使用SequenceFileOutPutFormat输出合并文件。
 
+- 案例：
+
+  将多个小文件合并成一个SequenceFile文件（SequenceFile文件是Hadoop用来存储二进制形式的key-value对的文件格式），SequenceFile里面存储着多个文件，存储的形式为文件路径+名称为key，文件内容为value。
+
+~~~ java
+//1、自定义一个类继承FileInputFormat
+//（1）重写isSplitable()方法，返回false不可切割
+//（2）重写createRecordReader()，创建自定义的RecordReader对象，并初始化
+//2、改写RecordReader，实现一次读取一个完整文件封装为KV
+//（1）采用IO流一次读取一个文件输出到value中，因为设置了不可切片，最终把所有文件都封装到了value中
+//（2）获取文件路径信息+名称，并设置key
+//3、设置Driver
+// （1）设置输入的inputFormat
+job.setInputFormatClass(WholeFileInputformat.class);
+// （2）设置输出的outputFormat
+job.setOutputFormatClass(SequenceFileOutputFormat.class);
+//案例地址
+https://github.com/justdoitMr/BigData_doc/tree/master/codes/hadoop/FileInputFormat/src/com/qq/rzf/FileInputFormat
+~~~
+
+### 3.7，**MapReduce**工作流程
+
+![](../img/mapreducer_pic/mapreducer工作.png)
+
+![](../img/mapreducer_pic/mapreducer工作详情.png)
+
+
+
+上面的流程是整个MapReduce最全工作流程，但是Shuffle过程只是从第7步开始到第16步结束，具体Shuffle过程详解，如下：
+
+1）MapTask收集我们的map()方法输出的kv对，放到内存缓冲区中
+
+2）从内存缓冲区不断溢出本地磁盘文件，可能会溢出多个文件
+
+3）多个溢出文件会被合并成大的溢出文件
+
+4）在溢出过程及合并的过程中，都要调用Partitioner进行分区和针对key进行排序
+
+5）ReduceTask根据自己的分区号，去各个MapTask机器上取相应的结果分区数据
+
+6）ReduceTask会取到同一个分区的来自不同MapTask的结果文件，ReduceTask会将这些文件再进行合并（归并排序）
+
+7）合并成大文件后，Shuffle的过程也就结束了，后面进入ReduceTask的逻辑运算过程（从文件中取出一个一个的键值对Group，调用用户自定义的reduce()方法）
+
+3．注意
+
+Shuffle中的缓冲区大小会影响到MapReduce程序的执行效率，原则上说，缓冲区越大，磁盘io的次数越少，执行速度就越快。
+
+缓冲区的大小可以通过参数调整，参数：io.sort.mb默认100M。
+
+4．源码解析流程
+
+![](../img/mapreducer_pic/mapreducer源码.png)
+
+### 3.8，**S**huffle机制
+
+- Mapreduce确保每个reducer的输入都是按键排序的。系统执行排序的过程（即将map输出作为输入传给reducer）称为shuffle，Map方法之后，Reduce方法之前的数据处理过程称之为Shuffle。
+
+![](../img/mapreducer_pic/shuffle.png)
+
+![](../img/mapreducer_pic/shuffle机制.png)
+
+1. mapreducer工作流
+
+   1. MapTask工作机制
+
+   ​	（1）Read阶段：Map Task通过用户编写的RecordReader，从输入InputSplit中解析出一个个key/value。
+
+   ​	（2）Map阶段：该节点主要是将解析出的key/value交给用户编写map()函数处理，并产生一系列新的key/value。
+
+   ​	（3）Collect阶段：在用户编写map()函数中，当数据处理完成后，一般会调用OutputCollector.collect()输出结果。在该函数内部，它会将生成的key/value分区（调用Partitioner），并写入一个环形内存缓冲区中。
+
+   ​	（4）Spill阶段：即“溢写”，当环形缓冲区满后，MapReduce会将数据写到本地磁盘上，生成一个临时文件。需要注意的是，将数据写入本地磁盘之前，先要对数据进行一次本地排序，并在必要时对数据进行合并、压缩等操作。
+
+   ​	溢写阶段详情：
+
+   ​	步骤1：利用快速排序算法对缓存区内的数据进行排序，排序方式是，先按照分区编号partition进行排序，然后按照key进行排序。这样，经过排序后，数据以分区为单位聚集在一起，且同一分区内所有数据按照key有序。
+
+   ​	步骤2：按照分区编号由小到大依次将每个分区中的数据写入任务工作目录下的临时文件output/spillN.out（N表示当前溢写次数）中。如果用户设置了Combiner，则写入文件之前，对每个分区中的数据进行一次聚集操作。
+
+   ​	步骤3：将分区数据的元信息写到内存索引数据结构SpillRecord中，其中每个分区的元信息包括在临时文件中的偏移量、压缩前数据大小和压缩后数据大小。如果当期内存索引大小超过1MB，则将内存索引写到文件output/spillN.out.index中。
+
+   ​	（5）Combine阶段：当所有数据处理完成后，MapTask对所有临时文件进行一次合并，以确保最终只会生成一个数据文件。
+
+   ​	当所有数据处理完后，MapTask会将所有临时文件合并成一个大文件，并保存到文件output/file.out中，同时生成相应的索引文件output/file.out.index。
+
+   ​	在进行文件合并过程中，MapTask以分区为单位进行合并。对于某个分区，它将采用多轮递归合并的方式。每轮合并io.sort.factor（默认100）个文件，并将产生的文件重新加入待合并列表中，对文件排序后，重复以上过程，直到最终得到一个大文件。
+
+   ​	让每个MapTask最终只生成一个数据文件，可避免同时打开大量文件和同时读取大量小文件产生的随机读取带来的开销。
+
+### 3.9，**partition**分区
+
+- 问题引出：要求将统计结果按照条件输出到不同文件中（分区）。比如：将统计结果按照手机归属地不同省份输出到不同文件中（分区）
+- 默认partition分区
+
+~~~ java
+public class HashPartitioner<K, V> extends Partitioner<K, V> {
+  /** Use {@link Object#hashCode()} to partition. */
+  public int getPartition(K key, V value, int numReduceTasks) {
+    return (key.hashCode() & Integer.MAX_VALUE) % numReduceTasks;
+  }
+}
+//默认分区是根据key的hashCode对reduceTasks个数取模得到的。用户没法控制哪个key存储到哪个分区
+~~~
+
+1. 自定义Partitioner步骤:
+   1. 自定义类继承Partitioner，重新getPartition()方法
+
+~~~ java
+public class ProvincePartitioner extends Partitioner<Text, FlowBean> {
+	@Override
+	public int getPartition(Text key, FlowBean value, int numPartitions) {
+// 1 获取电话号码的前三位
+		String preNum = key.toString().substring(0, 3);
+		
+		int partition = 4;
+		
+		// 2 判断是哪个省
+		if ("136".equals(preNum)) {
+			partition = 0;
+		}else if ("137".equals(preNum)) {
+			partition = 1;
+		}else if ("138".equals(preNum)) {
+			partition = 2;
+		}else if ("139".equals(preNum)) {
+			partition = 3;
+		}
+		return partition;
+	}
+}
+~~~
+
+  		2. 在job驱动中，设置自定义partitioner： 
+
+~~~ java
+job.setPartitionerClass(CustomPartitioner.class)
+~~~
+
+ 	3. 自定义partition后，要根据自定义partitioner的逻辑设置相应数量的reduce task
+
+~~~ java
+job.setNumReduceTasks(5);
+//注意：
+如果reduceTask的数量> getPartition的结果数，则会多产生几个空的输出文件part-r-000xx；
+如果1<reduceTask的数量<getPartition的结果数，则有一部分分区数据无处安放，会Exception；
+如果reduceTask的数量=1，则不管mapTask端输出多少个分区文件，最终结果都交给这一个reduceTask，最终也就只会产生一个结果文件 part-r-00000；
+~~~
+
+### 3.10，**排序**
+
+1. 排序是MapReduce框架中最重要的操作之一。Map Task和Reduce Task均会对数据（按照key）进行排序。该操作属于Hadoop的默认行为。任何应用程序中的数据均会被排序，而不管逻辑上是否需要。默认排序是按照字典顺序排序，且实现该排序的方法是快速排序
+
+   ​	对于Map Task，它会将处理的结果暂时放到一个缓冲区中，当缓冲区使用率达到一定阈值后，再对缓冲区中的数据进行一次快速排序，并将这些有序数据写到磁盘上，而当数据处理完毕后，它会对磁盘上所有文件进行归并排序。，以将这些文件合并成一个大的有序文件。
+
+   ​	对于Reduce Task，它从每个Map Task上远程拷贝相应的数据文件，如果文件大小超过一定阈值，则放到磁盘上，否则放到内存中。如果磁盘上文件数目达到一定阈值，则进行一次合并以生成一个更大文件；如果内存中文件大小或者数目超过一定阈值，则进行一次合并后将数据写到磁盘上。当所有数据拷贝完毕后，Reduce Task统一对内存和磁盘上的所有数据进行一次合并。
+
+2. 每个阶段的默认排序
+
+   （1）部分排序：
+
+   MapReduce根据输入记录的键对数据集排序。保证输出的每个文件内部排序。
+
+   （2）全排序：
+
+   如何用Hadoop产生一个全局排序的文件？最简单的方法是使用一个分区。但该方法在处理大型文件时效率极低，因为一台机器必须处理所有输出文件，从而完全丧失了MapReduce所提供的并行架构。
+
+   ​	替代方案：首先创建一系列排好序的文件；其次，串联这些文件；最后，生成一个全局排序的文件。主要思路是使用一个分区来描述输出的全局排序。例如：可以为上述文件创建3个分区，在第一分区中，记录的单词首字母a-g，第二分区记录单词首字母h-n, 第三分区记录单词首字母o-z。
+
+   （3）辅助排序：（GroupingComparator分组）
+
+   ​	Mapreduce框架在记录到达reducer之前按键对记录排序，但键所对应的值并没有被排序。甚至在不同的执行轮次中，这些值的排序也不固定，因为它们来自不同的map任务且这些map任务在不同轮次中完成时间各不相同。一般来说，大多数MapReduce程序会避免让reduce函数依赖于值的排序。但是，有时也需要通过特定的方法对键进行排序和分组等以实现对值的排序。
+
+3. 自定义排序WritableComparable
+
+~~~ java
+//bean对象实现WritableComparable接口重写compareTo方法，就可以实现排序
+@Override
+public int compareTo(FlowBean o) {
+	// 倒序排列，从大到小
+	return this.sumFlow > o.getSumFlow() ? -1 : 1;
+}
+~~~
+
+### 3.11，**Combiner合并**
+
+​	（1）Combiner是MR程序中Mapper和Reducer之外的一种组件。
+
+​	（2）Combiner组件的父类就是Reducer。
+
+​	（3）Combiner和Reducer的区别在于运行的位置
+
+​		Combiner是在每一个MapTask所在的节点运行;
+
+​		Reducer是接收全局所有Mapper的输出结果；
+
+​	（4）Combiner的意义就是对每一个MapTask的输出进行局部汇总，以减小网络传输量。
+
+​	（5）Combiner能够应用的前提是不能影响最终的业务逻辑，而且，Combiner的输出kv应该跟Reducer的输入kv类型要对应起来。
+
+1.  自定义Combiner实现步骤
+   1. 自定义一个Combiner继承Reducer，重写Reduce方法
+
+~~~ java
+public class WordcountCombiner extends Reducer<Text, IntWritable, Text, IntWritable>{
+	
+	IntWritable v = new IntWritable();
+	
+	@Override
+	protected void reduce(Text key, Iterable<IntWritable> values,
+			Reducer<Text, IntWritable, Text, IntWritable>.Context context) throws IOException, InterruptedException {
+		
+		int sum = 0;
+		
+		// 1 汇总操作
+		for (IntWritable value : values) {
+			sum += value.get();
+		}
+		
+		v.set(sum);
+		
+		// 2 写出
+		context.write(key, v);
+	}
+}
+~~~
+
+ 	2. 在Job驱动类中设置：
+
+~~~ java
+job.setCombinerClass(WordcountCombiner.class);
+~~~
+
+### 3.12，**GroupingComparator分组（辅助**排序）
+
+​	对Reduce阶段的数据根据某一个或几个字段进行分组。
+
+分组排序步骤：
+
+（1）自定义类继承WritableComparator
+
+（2）重写compare()方法
+
+~~~ java
+@Override
+public int compare(WritableComparable a, WritableComparable b) {
+		// 比较的业务逻辑
+		… …
+
+		return result;
+}
+~~~
+
+​	（3）创建一个构造将比较对象的类传给父类
+
+~~~ java
+protected OrderGroupingComparator() {
+		super(OrderBean.class, true);
+}
+~~~
+
+### 3.13，**MapTask工作**机制
+
+![](../img/mapreducer_pic/maptask.png)
+
+
+
+（1）Read阶段：MapTask通过用户编写的RecordReader，从输入InputSplit中解析出一个个key/value。
+
+​	（2）Map阶段：该节点主要是将解析出的key/value交给用户编写map()函数处理，并产生一系列新的key/value。
+
+​	（3）Collect收集阶段：在用户编写map()函数中，当数据处理完成后，一般会调用OutputCollector.collect()输出结果。在该函数内部，它会将生成的key/value分区（调用Partitioner），并写入一个环形内存缓冲区中。
+
+​	（4）Spill阶段：即“溢写”，当环形缓冲区满后，MapReduce会将数据写到本地磁盘上，生成一个临时文件。需要注意的是，将数据写入本地磁盘之前，先要对数据进行一次本地排序，并在必要时对数据进行合并、压缩等操作。
+
+​	溢写阶段详情：
+
+​	步骤1：利用快速排序算法对缓存区内的数据进行排序，排序方式是，先按照分区编号Partition进行排序，然后按照key进行排序。这样，经过排序后，数据以分区为单位聚集在一起，且同一分区内所有数据按照key有序。
+
+​	步骤2：按照分区编号由小到大依次将每个分区中的数据写入任务工作目录下的临时文件output/spillN.out（N表示当前溢写次数）中。如果用户设置了Combiner，则写入文件之前，对每个分区中的数据进行一次聚集操作。
+
+​	步骤3：将分区数据的元信息写到内存索引数据结构SpillRecord中，其中每个分区的元信息包括在临时文件中的偏移量、压缩前数据大小和压缩后数据大小。如果当前内存索引大小超过1MB，则将内存索引写到文件output/spillN.out.index中。
+
+​	（5）Combine阶段：当所有数据处理完成后，MapTask对所有临时文件进行一次合并，以确保最终只会生成一个数据文件。
+
+​	当所有数据处理完后，MapTask会将所有临时文件合并成一个大文件，并保存到文件output/file.out中，同时生成相应的索引文件output/file.out.index。
+
+​	在进行文件合并过程中，MapTask以分区为单位进行合并。对于某个分区，它将采用多轮递归合并的方式。每轮合并io.sort.factor（默认10）个文件，并将产生的文件重新加入待合并列表中，对文件排序后，重复以上过程，直到最终得到一个大文件。
+
+​	让每个MapTask最终只生成一个数据文件，可避免同时打开大量文件和同时读取大量小文件产生的随机读取带来的开销。
+
+### 3.14，**ReduceTask工作机制**
+
+![](../img/mapreducer_pic/reducertask.png)
+
+​		
+
+（1）Copy阶段：ReduceTask从各个MapTask上远程拷贝一片数据，并针对某一片数据，如果其大小超过一定阈值，则写到磁盘上，否则直接放到内存中。
+
+（2）Merge阶段：在远程拷贝数据的同时，ReduceTask启动了两个后台线程对内存和磁盘上的文件进行合并，以防止内存使用过多或磁盘上文件过多。
+
+（3）Sort阶段：按照MapReduce语义，用户编写reduce()函数输入数据是按key进行聚集的一组数据。为了将key相同的数据聚在一起，Hadoop采用了基于排序的策略。由于各个MapTask已经实现对自己的处理结果进行了局部排序，因此，ReduceTask只需对所有数据进行一次归并排序即可。
+
+（4）Reduce阶段：reduce()函数将计算结果写到HDFS上
+
+1. 设置ReduceTask并行度（个数）
+
+   ReduceTask的并行度同样影响整个Job的执行并发度和执行效率，但与MapTask的并发数由切片数决定不同，ReduceTask数量的决定是可以直接手动设置：
+
+~~~ java
+// 默认值是1，手动设置为4
+job.setNumReduceTasks(4);
+~~~
+
+2. 注意事项
+   1. ReduceTask=0，表示没有Reduce阶段，输出文件个数和Map个数一致。
+   2. ReduceTask默认值就是1，所以输出文件个数为一个。
+   3. 如果数据分布不均匀，就有可能在Reduce阶段产生数据倾斜
+   4. ReduceTask数量并不是任意设置，还要考虑业务逻辑需求，有些情况下，需要计算全局汇总结果，就只能有1个ReduceTask。
+   5. 具体多少个ReduceTask，需要根据集群性能而定。
+   6. 如果分区数不是1，但是ReduceTask为1，是否执行分区过程。答案是：不执行分区过程。因为在MapTask的源码中，执行分区的前提是先判断ReduceNum个数是否大于1。不大于1肯定不执行。
+
+### 3.15，**O**utputFormat数据输出
+
+1.   OutputFormat是MapReduce输出的基类，所有实现MapReduce输出都实现了 OutputFormat接口。下面我们介绍几种常见的OutputFormat实现类。
+
+   1. 文本输出TextOutputFormat
+
+      默认的输出格式是TextOutputFormat，它把每条记录写为文本行。它的键和值可以是任意类型，因为TextOutputFormat调用toString()方法把它们转换为字符串。
+
+   2. SequenceFileOutputFormat
+
+       将SequenceFileOutputFormat输出作为后续 MapReduce任务的输入，这便是一种好的输出格式，因为它的格式紧凑，很容易被压缩。
+
+   3. 自定义OutputFormat
+
+      根据用户需求，自定义实现输出。
+
+### 3.16，**自定义Out**putFormat
+
+ 1. 使用场景：
+
+    为了实现控制最终文件的输出路径和输出格式，可以自定义OutputFormat。例如：要在一个MapReduce程序中根据数据的不同输出两类结果到不同目录，这类灵活的输出需求可以通过自定义OutputFormat来实现。
+
+2. 自定义OutputFormat步骤
+   1. 自定义一个类继承FileOutputFormat。
+   2. 改写RecordWriter，具体改写输出数据的方法write()。
+
+### 3.17，**M**apReduce开发总结
+
+1. 输入数据接口：InputFormat
+   1. 1）默认使用的实现类是：TextInputFormat 
+   2. TextInputFormat的功能逻辑是：一次读一行文本，然后将该行的起始偏移量作为key，行内容作为value返回。
+   3. KeyValueTextInputFormat每一行均为一条记录，被分隔符分割为key，value。默认分隔符是tab（\t）。
+   4. NlineInputFormat按照指定的行数N来划分切片。
+   5. CombineTextInputFormat可以把多个小文件合并成一个切片处理，提高处理效率。
+   6. 用户还可以自定义InputFormat。
+2. 逻辑处理接口：Mapper 
+   1. 用户根据业务需求实现其中三个方法：map()   setup()   cleanup () 
+3. Partitioner分区
+   1. 有默认实现 HashPartitioner，逻辑是根据key的哈希值和numReduces来返回一个分区号；key.hashCode()&Integer.MAXVALUE % numReduces
+   2. 如果业务上有特别的需求，可以自定义分区。
+4. Comparable排序
+   1. 当我们用自定义的对象作为key来输出时，就必须要实现WritableComparable接口，重写其中的compareTo()方法。
+   2. 部分排序：对最终输出的每一个文件进行内部排序。
+   3. 全排序：对所有数据进行排序，通常只有一个Reduce。
+   4. 二次排序：排序的条件有两个。
+5. Combiner合并
+   1. Combiner合并可以提高程序执行效率，减少IO传输。但是使用时必须不能影响原有的业务处理结果。
+6. Reduce端分组：GroupingComparator，对最终结果进行分组。
+   1.  在Reduce端对key进行分组。应用于：在接收的key为bean对象时，想让一个或几个字段相同（全部字段比较不相同）的key进入到同一个reduce方法时，可以采用分组排序。
+7. 逻辑处理接口：Reducer
+   1. 用户根据业务需求实现其中三个方法：reduce()   setup()   cleanup () 
+8. 输出数据接口：OutputFormat
+   1. 默认实现类是TextOutputFormat，功能逻辑是：将每一个KV对，向目标文本文件输出一行。
+   2. 将SequenceFileOutputFormat输出作为后续 MapReduce任务的输入，这便是一种好的输出格式，因为它的格式紧凑，很容易被压缩。
+   3. 用户还可以自定义OutputFormat。
+
+## 第四章，**M**apReduce数据压缩
+
+### 4.1，压缩概述
+
+​	压缩技术能够有效减少底层存储系统（HDFS）读写字节数。压缩提高了网络带宽和磁盘空间的效率。在Hadood下，尤其是数据规模很大和工作负载密集的情况下，使用数据压缩显得非常重要。在这种情况下，I/O操作和网络数据传输要花大量的时间。还有，Shuffle与Merge过程同样也面临着巨大的I/O压力。
+
+​	鉴于磁盘I/O和网络带宽是Hadoop的宝贵资源，数据压缩对于节省资源、最小化磁盘I/O和网络传输非常有帮助。不过，尽管压缩与解压操作的CPU开销不高，其性能的提升和资源的节省并非没有代价。
+
+​	如果磁盘I/O和网络带宽影响了MapReduce作业性能，在任意MapReduce阶段启用压缩都可以改善端到端处理时间并减少I/O和网络流量。
+
+压缩**mapreduce的一种优化策略：通过压缩编码对mapper或者reducer的输出进行压缩，以减少磁盘IO，**提高MR程序运行速度（但相应增加了cpu运算负担）
+
+注意：压缩特性运用得当能提高性能，但运用不当也可能降低性能
+
+基本原则：
+
+（1）运算密集型的job，少用压缩
+
+（2）IO密集型的job，多用压缩
+
+### 4.2，**MR支持的压缩编码**
+
+| 压缩格式 | hadoop自带？ | 算法    | 文件扩展名 | 是否可切分 | 换成压缩格式后，原来的程序是否需要修改 |
+| -------- | ------------ | ------- | ---------- | ---------- | -------------------------------------- |
+| DEFLATE  | 是，直接使用 | DEFLATE | .deflate   | 否         | 和文本处理一样，不需要修改             |
+| Gzip     | 是，直接使用 | DEFLATE | .gz        | 否         | 和文本处理一样，不需要修改             |
+| bzip2    | 是，直接使用 | bzip2   | .bz2       | 是         | 和文本处理一样，不需要修改             |
+| LZO      | 否，需要安装 | LZO     | .lzo       | 是         | 需要建索引，还需要指定输入格式         |
+| Snappy   | 否，需要安装 | Snappy  | .snappy    | 否         | 和文本处理一样，不需要修改             |
+
+- 为了支持多种压缩/解压缩算法，Hadoop引入了编码/解码器，如下表所示。
+
+| 压缩格式 | 对应的编码/解码器                          |
+| -------- | ------------------------------------------ |
+| DEFLATE  | org.apache.hadoop.io.compress.DefaultCodec |
+| gzip     | org.apache.hadoop.io.compress.GzipCodec    |
+| bzip2    | org.apache.hadoop.io.compress.BZip2Codec   |
+| LZO      | com.hadoop.compression.lzo.LzopCodec       |
+| Snappy   | org.apache.hadoop.io.compress.SnappyCodec  |
+
+| 压缩算法 | 原始文件大小 | 压缩文件大小 | 压缩速度 | 解压速度 |
+| -------- | ------------ | ------------ | -------- | -------- |
+| gzip     | 8.3GB        | 1.8GB        | 17.5MB/s | 58MB/s   |
+| bzip2    | 8.3GB        | 1.1GB        | 2.4MB/s  | 9.5MB/s  |
+| LZO      | 8.3GB        | 2.9GB        | 49.3MB/s | 74.6MB/s |
+
+### 4.3，**压缩**方式选择
+
+1. Gzip压缩
+
+   优点：压缩率比较高，而且压缩/解压速度也比较快；Hadoop本身支持，在应用中处理Gzip格式的文件就和直接处理文本一样；大部分Linux系统都自带Gzip命令，使用方便。
+
+   缺点：不支持Split。
+
+   应用场景：当每个文件压缩之后在130M以内的（1个块大小内），都可以考虑用Gzip压缩格式。例如说一天或者一个小时的日志压缩成一个Gzip文件
+
+2. bzip2压缩
+
+   优点：支持Split；具有很高的压缩率，比Gzip压缩率都高；Hadoop本身自带，使用方便。
+
+   缺点：压缩/解压速度慢。
+
+   应用场景：适合对速度要求不高，但需要较高的压缩率的时候；或者输出之后的数据比较大，处理之后的数据需要压缩存档减少磁盘空间并且以后数据用得比较少的情况；或者对单个很大的文本文件想压缩减少存储空间，同时又需要支持Split，而且兼容之前的应用程序的情况。
+
+3. Lzo压缩
+
+   优点：压缩/解压速度也比较快，合理的压缩率；支持Split，是Hadoop中最流行的压缩格式；可以在Linux系统下安装lzop命令，使用方便
+
+   缺点：压缩率比Gzip要低一些；Hadoop本身不支持，需要安装；在应用中对Lzo格式的文件需要做一些特殊处理（为了支持Split需要建索引，还需要指定InputFormat为Lzo格式）。
+
+   应用场景：一个很大的文本文件，压缩之后还大于200M以上的可以考虑，而且单个文件越大，Lzo优点越越明显。
+
+4. Snappy压缩
+
+   优点：高速压缩速度和合理的压缩率。
+
+   缺点：不支持Split；压缩率比Gzip要低；Hadoop本身不支持，需要安装。
+
+   应用场景：当MapReduce作业的Map输出的数据比较大的时候，作为Map到Reduce的中间数据的压缩格式；或者作为一个MapReduce作业的输出和另外一个MapReduce作业的输入。
+
+### 4.4，**压缩位置选择**
+
+- 压缩可以在MapReduce作用的任意阶段启用
+
+![](../img/mapreducer_pic/压缩.png)
+
+### 4.5，压缩参数配置
+
+| 参数                                                         | 默认值                                                       | 阶段        | 建议                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ----------- | --------------------------------------------- |
+| io.compression.codecs   （在core-site.xml中配置）            | org.apache.hadoop.io.compress.DefaultCodec, org.apache.hadoop.io.compress.GzipCodec, org.apache.hadoop.io.compress.BZip2Codec | 输入压缩    | Hadoop使用文件扩展名判断是否支持某种编解码器  |
+| mapreduce.map.output.compress（在mapred-site.xml中配置）     | false                                                        | mapper输出  | 这个参数设为true启用压缩                      |
+| mapreduce.map.output.compress.codec（在mapred-site.xml中配置） | org.apache.hadoop.io.compress.DefaultCodec                   | mapper输出  | 企业多使用LZO或Snappy编解码器在此阶段压缩数据 |
+| mapreduce.output.fileoutputformat.compress（在mapred-site.xml中配置） | false                                                        | reducer输出 | 这个参数设为true启用压缩                      |
+| mapreduce.output.fileoutputformat.compress.codec（在mapred-site.xml中配置） | org.apache.hadoop.io.compress. DefaultCodec                  | reducer输出 | 使用标准工具或者编解码器，如gzip和bzip2       |
+| mapreduce.output.fileoutputformat.compress.type（在mapred-site.xml中配置） | RECORD                                                       | reducer输出 | SequenceFile输出使用的压缩类型：NONE和BLOCK   |
 
 
 
 
 
 
-​	
+
+
+
+
+
+
+
+
+
+
+
+## 第五章，**MapReduce与**Yarn
+
+### 5.1，**Y**arn概述
+
+Yarn是一个资源调度平台，负责为运算程序提供服务器运算资源，相当于一个分布式的操作系统平台，而mapreduce等运算程序则相当于运行于操作系统之上的应用程序
+
+### 5.2，**Y**arn的重要概念
+
+1）Yarn并不清楚用户提交的程序的运行机制
+
+2）Yarn只提供运算资源的调度（用户程序向Yarn申请资源，Yarn就负责分配资源）
+
+3）Yarn中的主管角色叫ResourceManager
+
+4）Yarn中具体提供运算资源的角色叫NodeManager
+
+5）这样一来，Yarn其实就与运行的用户程序完全解耦，就意味着Yarn上可以运行各种类型的分布式运算程序（mapreduce只是其中的一种），比如mapreduce、storm程序，spark程序……
+
+6）所以，spark、storm等运算框架都可以整合在Yarn上运行，只要他们各自的框架中有符合Yarn规范的资源请求机制即可
+
+7）Yarn就成为一个通用的资源调度平台，从此，企业中以前存在的各种运算集群都可以整合在一个物理集群上，提高资源利用率，方便数据共享
+
+### 5.3，**Y**arn基本架构
+
+YARN主要由ResourceManager、NodeManager、ApplicationMaster和Container等组件构成
+
+![](../img/mapreducer_pic/yarn架构.png)
+
+### 5.4，yarn工作机制
+
+![](../img/mapreducer_pic/yarn工作机制.png)
+
+（1）MR程序提交到客户端所在的节点。
+
+​	（2）YarnRunner向ResourceManager申请一个Application。
+
+​	（3）RM将该应用程序的资源路径返回给YarnRunner。
+
+​	（4）该程序将运行所需资源提交到HDFS上。
+
+​	（5）程序资源提交完毕后，申请运行mrAppMaster。
+
+​	（6）RM将用户的请求初始化成一个Task。
+
+​	（7）其中一个NodeManager领取到Task任务。
+
+​	（8）该NodeManager创建容器Container，并产生MRAppmaster。
+
+​	（9）Container从HDFS上拷贝资源到本地。
+
+​	（10）MRAppmaster向RM 申请运行MapTask资源。
+
+​	（11）RM将运行MapTask任务分配给另外两个NodeManager，另两个NodeManager分别领取任务并创建容器。
+
+​	（12）MR向两个接收到任务的NodeManager发送程序启动脚本，这两个NodeManager分别启动MapTask，MapTask对数据分区排序。
+
+​	（13）MrAppMaster等待所有MapTask运行完毕后，向RM申请容器，运行ReduceTask。
+
+​	（14）ReduceTask向MapTask获取相应分区的数据。
+
+​	（15）程序运行完毕后，MR会向RM申请注销自己。
+
+### 5.5，作业提交全过程
+
+![](../img/mapreducer_pic/yarn工作机制.png)
+
+作业提交全过程详解
+
+（1）作业提交
+
+第1步：Client调用job.waitForCompletion方法，向整个集群提交MapReduce作业。
+
+第2步：Client向RM申请一个作业id。
+
+第3步：RM给Client返回该job资源的提交路径和作业id。
+
+第4步：Client提交jar包、切片信息和配置文件到指定的资源提交路径。
+
+第5步：Client提交完资源后，向RM申请运行MrAppMaster。
+
+（2）作业初始化
+
+第6步：当RM收到Client的请求后，将该job添加到容量调度器中。
+
+第7步：某一个空闲的NM领取到该Job。
+
+第8步：该NM创建Container，并产生MRAppmaster。
+
+第9步：下载Client提交的资源到本地。
+
+（3）任务分配
+
+第10步：MrAppMaster向RM申请运行多个MapTask任务资源。
+
+第11步：RM将运行MapTask任务分配给另外两个NodeManager，另两个NodeManager分别领取任务并创建容器。
+
+（4）任务运行
+
+第12步：MR向两个接收到任务的NodeManager发送程序启动脚本，这两个NodeManager分别启动MapTask，MapTask对数据分区排序。
+
+第13步：MrAppMaster等待所有MapTask运行完毕后，向RM申请容器，运行ReduceTask。
+
+第14步：ReduceTask向MapTask获取相应分区的数据。
+
+第15步：程序运行完毕后，MR会向RM申请注销自己。
+
+（5）进度和状态更新
+
+YARN中的任务将其进度和状态(包括counter)返回给应用管理器, 客户端每秒(通过mapreduce.client.progressmonitor.pollinterval设置)向应用管理器请求进度更新, 展示给用户。
+
+（6）作业完成
+
+除了向应用管理器请求作业进度外, 客户端每5秒都会通过调用waitForCompletion()来检查作业是否完成。时间间隔可以通过mapreduce.client.completion.pollinterval来设置。作业完成之后, 应用管理器和Container会清理工作状态。作业的信息会被作业历史服务器存储以备之后用户核查。
+
+- 作业提交过程之MapReduce
+
+![](../img/mapreducer_pic/作业提交mapreducer.png)
+
+- 
+
+![](../img/mapreducer_pic/作业提交.png)
+
+- 
+
+![](../img/mapreducer_pic/读数据.png)
+
+- 
+
+![](../img/mapreducer_pic/写数据.png)
