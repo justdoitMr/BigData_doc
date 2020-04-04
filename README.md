@@ -4,6 +4,15 @@
 ***
 1. [大数据学习路线和资源整理]()
 2. [大数据框架安装指南]()
+
+
+
+## Linux整理
+
+***
+
+1. [Linux命令整理](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Linux.md>)
+
 ## Hadoop学习笔记
 ***
 1. [大数据入门](https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hadoop%E5%85%A5%E9%97%A8%E4%BB%8B%E7%BB%8D.md)
