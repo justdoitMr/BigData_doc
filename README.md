@@ -27,11 +27,8 @@
 ## Hive学习笔记
 ***
 
-<<<<<<< HEAD
-1. [Hive笔记]()
-=======
 1. [Hive入门](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hive.md>)
->>>>>>> dev
+
 
 
 
