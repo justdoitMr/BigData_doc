@@ -27,7 +27,11 @@
 ## Hive学习笔记
 ***
 
+<<<<<<< HEAD
 1. [Hive笔记]()
+=======
+1. [Hive入门](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hive.md>)
+>>>>>>> dev
 
 
 
@@ -57,4 +61,7 @@
 
 ## 大数据之数仓项目
 
+1. [数仓环境搭建](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/%E6%95%B0%E6%8D%AE%E4%BB%93%E5%BA%93%E9%A1%B9%E7%9B%AE.md>)
+2. [用户行为数仓](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/%E7%94%A8%E6%88%B7%E8%A1%8C%E4%B8%BA%E6%95%B0%E6%8D%AE%E4%BB%93%E5%BA%93.md>)
+3. [数仓代码](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/%E6%95%B0%E6%8D%AE%E4%BB%93%E5%BA%93%E4%BB%A3%E7%A0%81.md>)
 
