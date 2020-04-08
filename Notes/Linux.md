@@ -751,9 +751,16 @@ chown 文件所属用户：文件所属组 文件名
 
 ### 3.11，grep在文件内搜索字符匹配的行并且输出
 
+- （global search regular expression(RE) and print out the line，全面搜索正则表达式并把行打印出来）是一种强大的文本搜索工具，它能使用正则表达式搜索文本，并把匹配的行打印出来。
+
 1）基本语法，相当于二次检索
 
 grep+参数+查找内容+源文件
+
+~~~ java
+grep [-abcEFGhHilLnqrsvVwxy][-A<显示列数>][-B<显示列数>][-C<显示列数>][-d<进行动作>][-e<范本样式>][-f<范本文件>][--help][范本样式][文件或目录...]
+https://linux.cn/article-1672-1.html//find和grep命令详解
+~~~
 
 参数：
 
