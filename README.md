@@ -5,13 +5,13 @@
 1. [大数据学习路线和资源整理]()
 2. [大数据框架安装指南]()
 
-## `Linux`整理
+## 一，`Linux`整理
 
 ***
 
 1. [`Linux`命令整理](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Linux.md>)
 
-## `Hadoop`学习笔记
+## 二，`Hadoop`学习笔记
 ***
 1. [大数据入门](https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hadoop%E5%85%A5%E9%97%A8%E4%BB%8B%E7%BB%8D.md)
 2. [`Hadoop`完全分布式环境搭建](https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hadoop%E5%AE%8C%E5%85%A8%E5%88%86%E5%B8%83%E5%BC%8F%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.md)
@@ -20,32 +20,32 @@
 5. [`mapreducer`机制](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/mapreducer%E8%BF%90%E8%A1%8C%E6%9C%BA%E5%88%B6%E8%A7%A3%E5%AF%86.md>)
 
 
-## `Hive`学习笔记
+## 三，`Hive`学习笔记
 ***
 
 1. [`Hive`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hive.md>)
 2. [`Hive`高级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hive%E9%AB%98%E7%BA%A7.md>)
 3. [`Hive`练习](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Hive%E5%B0%8F%E9%A1%B9%E7%9B%AE%E4%B9%8B%E8%B0%B7%E7%B2%92.md>)
 
-## `Kafka`笔记
+## 四，`Kafka`笔记
 
 ***
 
 1. [`Kafka`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Kafka.md>)
 
-## `Jvm`整理
+## 五，`Jvm`整理
 
 ***
 
 1. [`Jvm`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/JVM.md>)
 
-## `Scala`整理
+## 六，`Scala`整理
 
 1. [`Scala`环境安装](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Scala%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.md>)
 2. [`Scala`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Scala%E5%88%9D%E7%BA%A7%E7%AC%94%E8%AE%B0.md>)
 3. [`Scala`中级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Scala%E4%B8%AD%E7%BA%A7%E9%83%A8%E5%88%86.md>)
 
-## 大数据之数仓项目
+## 七，大数据之数仓项目
 
 1. [数仓环境搭建](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/%E6%95%B0%E6%8D%AE%E4%BB%93%E5%BA%93%E9%A1%B9%E7%9B%AE.md>)
 2. [用户行为数仓](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/%E7%94%A8%E6%88%B7%E8%A1%8C%E4%B8%BA%E6%95%B0%E6%8D%AE%E4%BB%93%E5%BA%93.md>)
