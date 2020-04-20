@@ -2,8 +2,6 @@
 
 ## 第一章，Hive的基本概念
 
-
-
 ### 1.1，什么是Hive?
 
 1. Hive：由Facebook开源用于解决海量结构化日志的数据统计。
@@ -12,7 +10,7 @@
 
    本质是：==将HQL转化成MapReduce程序==
 
-![Hive](img\Hive.png)
+![](../img/hive/sqlHive.png)
 
 1）Hive处理的数据存储在HDFS
 
@@ -50,7 +48,7 @@
 
 ### 1.3，Hive架构原理
 
-![Hive架构](img\Hive架构.png)
+![](../img/hive/hive架构.png)
 
 1．用户接口：Client
 
@@ -76,7 +74,7 @@ CLI（command-line interface）、JDBC/ODBC(jdbc访问hive)、WEBUI（浏览器�
 
 （4）执行器（Execution）：把逻辑执行计划转换成可以运行的物理计划。对于Hive来说，就是MR/Spark。
 
-![Hive](img\Hive运行机制.png)
+![](../img/hive/hive运行机制.png)
 
 
 
@@ -104,7 +102,7 @@ HADOOP_HOME=/opt/module/ha/hadoop-2.7.2
 export HIVE_CONF_DIR=/opt/module/hive-0.13.1-cdh5.3.6/conf
 ~~~
 
-在linus上面安装mysql（执行一下操作在root权限下）（这里使用的是免安装版本的）
+在linus上面安装mysql（执行操作在root权限下）（这里使用的是免安装版本的）
 
 1. 查看是否安装mysql服务
 
@@ -139,7 +137,7 @@ chown -R mysql mysql/
 chgrp -R mysql mysql/
 ```
 
-5. 安装mydql服务器
+5. 安装mysql服务器
 
 ```java
 //在mysql-libs目录下执行
@@ -203,7 +201,7 @@ grant all on *.* to root@hadoop101 identified by 'root'；
 flush privileges;
 ~~~
 
-### 2.3，修改hive.env.xml围文件
+### 2.3，修改hive.site.xml围文件
 
 ~~~ java
 <property>
@@ -318,23 +316,131 @@ source /etc/profile
 ### 2.6，Hive中一次使用的命令
 
 ~~~ java
-//-e可以一次使用sql查询命令
+//-e参数标示可以不进入hive命令行窗口直接执行sql语句
 hive -e "select * from mytable limit 3";
+//-f可以执行一个sql脚本
+bin/hive -f /opt/module/datas/hivef.sql
 //-S参数可以将查询结果保存在一个文件中
 hive -S -e "select * from mytable limit 3" >tmp>my.txt
+//可以将脚本的执行结果保存在文件中
+bin/hive -f /opt/module/datas/hivef.sql  > /opt/module/datas/hive_result.txt
 ~~~
 
 ### 2.7，从文件中执行hive查询
 
-![](../img/hive/hive文件查询.png)
+- 在`hive`中也可以使用`source`命令来执行一个脚本文件。
+
+~~~ java
+cat /path/to/file/withqueries.hql
+select x.* from src x;
+//执行脚本
+source /path/to/file/withqueries.hql;
+~~~
 
  ### 2.8，在hive中执行shell命令
 
 在需要执行的命令前面添加!以及在，命令末尾添加；即可。
 
-在hive客户端中执行hadoop命令
+~~~ java
+//在hive命令行查看hdfs文件系统
+dfs -ls /;
+~~~
 
-![](../img/hive/hivehadoop.png)
+注：这种命令的使用方式实际上等价于在`bash shell`中执行的`hadoop dfs`命令，但是执行更加高效，应为在`bash shell`中执行命令每一次都会启动一个新的`jvm`实例，但是`hive`会在同一个进程中执行这些命名。
+
+### 2.9，`Hive`中常见的属性配置
+
+#### 2.9.1，`Hive`数据仓库位置配置
+
+​	1）`Default`数据仓库的最原始位置是在`hdfs上`的：`/user/hive/warehouse`路径下。
+
+​	2）在仓库目录下，没有对默认的数据库`default`创建文件夹。如果某张表属于`default`数据库，直接在数据仓库目录下创建一个文件夹。
+
+​	3）修改`default`数据仓库原始位置（将`hive-default.xml.template`如下配置信息拷贝到`hive-site.xml`文件中）。
+
+~~~ java
+<property>
+<name>hive.metastore.warehouse.dir</name>
+<value>/user/hive/warehouse</value>
+<description>location of default database for the warehouse</description>
+</property
+//配置同组用户有执行权限
+bin/hdfs dfs -chmod g+w /user/hive/warehouse
+~~~
+
+#### 2.9.2，**查询后信息显示配置**
+
+- 在hive-site.xml文件中添加如下配置信息，就可以实现显示当前数据库，以及查询表的头信息配置。
+
+~~~java
+<property>
+	<name>hive.cli.print.header</name>
+	<value>true</value>
+</property>
+
+<property>
+	<name>hive.cli.print.current.db</name>
+	<value>true</value>
+</property>
+~~~
+
+#### 2.9.3，`Hive`运行日志信息配置
+
+1．`Hive`的`log`默认存放在`/tmp/rzf/hive.log`目录下（当前用户名下）
+
+2．修改`hive`的`log`存放日志到`/opt/module/hive/logs`
+
+​	（1）修改`/opt/module/hive/conf/hive-log4j.properties.template`文件名称为
+
+`hive-log4j.properties`.
+
+​	（2）在`hive-log4j.properties`文件中修改`log`存放位置
+
+~~~ java
+hive.log.dir=/opt/module/hive/logs
+~~~
+
+#### 2.9.4，**参数配置方式**
+
+1. 查看当前所有的配置信息
+
+~~~ java
+set;
+~~~
+
+2. 参数的配置三种方式
+
+   （1）配置文件方式
+
+   默认配置文件：`hive-default.xml `
+
+   用户自定义配置文件：`hive-site.xml`
+
+   ​	注意：用户自定义配置会覆盖默认配置。另外，`Hive`也会读入`Hadoop`的配置，因为`Hive`是作为`Hadoop`的客户端启动的，`Hive`的配置会覆盖`Hadoop`的配置。配置文件的设定对本机启动的所有`Hive`进程都有效。
+
+   （2）命令行参数方式
+
+   启动`Hive`时，可以在命令行添加`-hiveconf param=value`来设定参数。
+
+~~~ java
+bin/hive -hiveconf mapred.reduce.tasks=10;
+//注意：仅对本次hive启动有效
+//查看参数设置：
+set mapred.reduce.tasks;
+~~~
+
+​	（3）参数声明方式
+
+​	可以在`HQL`中使用`SET`关键字设定参数
+
+~~~ java
+set mapred.reduce.tasks=100;
+//注意：仅对本次hive启动有效。
+//查看参数设置
+set mapred.reduce.tasks;
+~~~
+
+​	上述三种设定方式的优先级依次递增。即配置文件<命令行参数<参数声明。注意某些系统级的参数，例如`log4j`相关的设定，必须用前两种方式设定，因为那些参数的读取在会话建立以前已经完成了。
 
 ## 第三章，Hive数据类型
 
@@ -353,49 +459,37 @@ hive -S -e "select * from mytable limit 3" >tmp>my.txt
 | TIMESTAMP    |              | 时间类型                                             |                                      |
 | BINARY       |              | 字节数组                                             |                                      |
 
-对于Hive的String类型相当于数据库的varchar类型，该类型是一个可变的字符串，不过它不能声明其中最多能存储多少个字符，理论上它可以存储2GB的字符数。
+​	对于`Hive`的`String`类型相当于数据库的`varchar`类型，该类型是一个可变的字符串，不过它不能声明其中最多能存储多少个字符，理论上它可以存储`2GB`的字符数。
 
 ### 3.2，集合数据类型
 
 | 数据类型 | 描述                                                         | 语法示例                                       |
 | -------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| STRUCT   | 和c语言中的struct类似，都可以通过“点”符号访问元素内容。例如，如果某个列的数据类型是STRUCT{first STRING, last STRING},那么第1个元素可以通过字段.first来引用。 | struct()例如struct<street:string, city:string> |
-| MAP      | MAP是一组键-值对元组集合，使用数组表示法可以访问数据。例如，如果某个列的数据类型是MAP，其中键->值对是’first’->’John’和’last’->’Doe’，那么可以通过字段名[‘last’]获取最后一个元素 | map()例如map<string, int>                      |
-| ARRAY    | 数组是一组具有相同类型和名称的变量的集合。这些变量称为数组的元素，每个数组元素都有一个编号，编号从零开始。例如，数组值为[‘John’, ‘Doe’]，那么第2个元素可以通过数组名[1]进行引用。 | Array()例如array<string>                       |
+| STRUCT   | 和c语言中的`struct`类似，都可以通过“点”符号访问元素内容。例如，如果某个列的数据类型是`STRUCT{first STRING, last STRING}`,那么第1个元素可以通过字段`.first`来引用。 | struct()例如struct<street:string, city:string> |
+| MAP      | `MAP`是一组键-值对元组集合，使用数组表示法可以访问数据。例如，如果某个列的数据类型是`MAP`，其中键->值对是`’first’->’John’`和`’last’->’Doe’`，那么可以通过字段名`[‘last’]`获取最后一个元素 | map()例如map<string, int>                      |
+| ARRAY    | 数组是一组具有相同类型和名称的变量的集合。这些变量称为数组的元素，每个数组元素都有一个编号，编号从零开始。例如，数组值为`[‘John’, ‘Doe’]`，那么第2个元素可以通过数组名[1]进行引用。 | Array()例如array<string>                       |
 
-Hive有三种复杂数据类型ARRAY、MAP 和 STRUCT。ARRAY和MAP与Java中的Array和Map类似，而STRUCT与C语言中的Struct类似，它封装了一个命名字段集合，复杂数据类型允许任意层次的嵌套。
+​	`Hive`有三种复杂数据类型`ARRAY`、`MAP` 和` STRUCT`。`ARRAY`和`MAP`与`Java`中的`Array`和`Map`类似，而`STRUCT`与`C`语言中的`Struct`类似，它封装了一个命名字段集合，复杂数据类型允许任意层次的嵌套。
 
 ### 3.3，类型转换
 
-Hive的原子数据类型是可以进行隐式转换的，类似于Java的类型转换，例如某表达式使用INT类型，TINYINT会自动转换为INT类型，但是Hive不会进行反向转化，例如，某表达式使用TINYINT类型，INT不会自动转换为TINYINT类型，它会返回错误，除非使用CAST操作。
+`Hive`的原子数据类型是可以进行隐式转换的，类似于`Java`的类型转换，例如某表达式使用`INT`类型，`TINYINT`会自动转换为`INT`类型，但是`Hive`不会进行反向转化，例如，某表达式使用`TINYINT`类型，`INT`不会自动转换为`TINYINT`类型，它会返回错误，除非使用`CAST`操作。
 
 1．隐式类型转换规则如下
 
-（1）任何整数类型都可以隐式地转换为一个范围更广的类型，如TINYINT可以转换成INT，INT可以转换成BIGINT。
+（1）任何整数类型都可以隐式地转换为一个范围更广的类型，如`TINYINT`可以转换成`INT`，`INT`可以转换成`BIGINT`。
 
-（2）所有整数类型、FLOAT和STRING类型都可以隐式地转换成DOUBLE。
+（2）所有整数类型、`FLOAT`和`STRING`类型都可以隐式地转换成`DOUBLE`。
 
-（3）TINYINT、SMALLINT、INT都可以转换为FLOAT。
+（3）`TINYINT`、`SMALLINT`、`INT`都可以转换为`FLOAT`。
 
-（4）BOOLEAN类型不可以转换为任何其它的类型。
+（4）`BOOLEAN`类型不可以转换为任何其它的类型。
 
-2．可以使用CAST操作显示进行数据类型转换
+2．可以使用`CAST`操作显示进行数据类型转换
 
-例如CAST('1' AS INT)将把字符串'1' 转换成整数1；如果强制类型转换失败，如执行CAST('X' AS INT)，表达式返回空值 NULL。
+例如`CAST('1' AS INT)`将把字符串'1' 转换成整数1；如果强制类型转换失败，如执行`CAST('X' AS INT)`，表达式返回空值 `NULL`。
 
-0: jdbc:hive2://hadoop102:10000> select '1'+2, cast('1'as int) + 2;
-
-+------+------+--+
-
-| _c0  | _c1  |
-
-+------+------+--+
-
-| 3.0  | 3    |
-
-+------+------+--+
-
-hive中并没有键的概念，但是用户可以对表建立索引。
+`hive`中并没有键的概念，但是用户可以对表建立索引。
 
 ### 3.4，hive小红默认的记录字段分隔符
 
@@ -405,9 +499,9 @@ hive中并没有键的概念，但是用户可以对表建立索引。
 
 ![](../img/hive/hive读时模式.png)
 
-## 第四章，数据定义语言DDL（**Data Definition Language**）
+## 第四章，数据定义语言`DDL（**Data Definition Language**）`
 
-- hive不支持行级插入操作更新操作和删除操作，也不支持事务。
+- `hive`不支持行级插入操作更新操作和删除操作，也不支持事务。
 
 ### 4.1，创建数据库
 
@@ -419,7 +513,7 @@ CREATE DATABASE [IF NOT EXISTS] database_name
 //hive会为每一个数据库创建一个目录，数据库中的表将会以这个数据库目录扥子目录形式存储。
 ~~~
 
-1）创建一个数据库，数据库在HDFS上的默认存储路径是/user/hive/warehouse/*.db。
+1）创建一个数据库，数据库在`HDFS`上的默认存储路径是`/user/hive/warehouse/*.db`。
 
 ~~~ java
 create database db_hive;
@@ -436,13 +530,13 @@ db_name comment location        owner_name      owner_type      parameters
 finances                hdfs://hadoop101:9000/user/hive/warehouse/finances.db   rui     USER{date=2020-3-20, creator=rui}
 ~~~
 
-2）避免要创建的数据库已经存在错误，增加if not exists判断。（标准写法）
+2）避免要创建的数据库已经存在错误，增加`if not exists`判断。（标准写法）
 
 ~~~ java
 create database if not exists db_hive;
 ~~~
 
-创建一个数据库，指定数据库在HDFS上存放的位置
+创建一个数据库，指定数据库在`HDFS`上存放的位置
 
 ~~~ java
 reate database db_hive2 location '/db_hive2.db';
@@ -468,7 +562,7 @@ show databases like 'defaul*';//这里通配符代指一个字符
 desc database default;
 ~~~
 
-4．显示数据库详细信息，extended
+4．显示数据库详细信息，`extended`
 
 ~~~ java
 desc database extended db_hive;
@@ -486,7 +580,7 @@ use default;
 
 ### 4.3，修改数据库
 
-用户可以使用ALTER DATABASE命令为某个数据库的DBPROPERTIES设置键-值对属性值，来描述这个数据库的属性信息。数据库的其他元数据信息都是不可更改的，包括数据库名和数据库所在的目录位置
+​	用户可以使用`ALTER DATABASE`命令为某个数据库的`DBPROPERTIES`设置键-值对属性值，来描述这个数据库的属性信息。数据库的其他元数据信息都是不可更改的，包括数据库名和数据库所在的目录位置
 
 1. 设置数据库的属性
 
@@ -533,43 +627,45 @@ CREATE [EXTERNAL] TABLE [IF NOT EXISTS] table_name //关键字标示创建外部
 
 2．字段解释说明 
 
-（1）CREATE TABLE 创建一个指定名字的表。如果相同名字的表已经存在，则抛出异常；用户可以用 IF NOT EXISTS 选项来忽略这个异常。
+（1）`CREATE TABLE `创建一个指定名字的表。如果相同名字的表已经存在，则抛出异常；用户可以用 `IF NOT EXISTS `选项来忽略这个异常。
 
-（2）EXTERNAL关键字可以让用户创建一个外部表，在建表的同时可以指定一个指向实际数据的路径（LOCATION），==在删除表的时候，内部表的元数据和数据会被一起删除，而外部表只删除元数据，不删除数据。==
+（2）`EXTERNAL`关键字可以让用户创建一个外部表，在建表的同时可以指定一个指向实际数据的路径`（LOCATION）`，==在删除表的时候，内部表的元数据和数据会被一起删除，而外部表只删除元数据，不删除数据。==
 
-（3）COMMENT：为表和列添加注释。
+（3）`COMMENT`：为表和列添加注释。
 
-（4）PARTITIONED BY创建分区表
+（4）`PARTITIONED BY`创建分区表
 
-（5）CLUSTERED BY创建分桶表
+（5）`CLUSTERED BY`创建分桶表
 
-（6）SORTED BY不常用，对桶中的一个或多个列另外排序
+（6）`SORTED BY`不常用，对桶中的一个或多个列另外排序
 
-（7）ROW FORMAT 
+（7）`ROW FORMAT `
 
+~~~ java
 DELIMITED [FIELDS TERMINATED BY char] [COLLECTION ITEMS TERMINATED BY char]
 
 ​        [MAP KEYS TERMINATED BY char] [LINES TERMINATED BY char] 
 
    | SERDE serde_name [WITH SERDEPROPERTIES (property_name=property_value, property_name=property_value, ...)]
+~~~
 
-用户在建表的时候可以自定义SerDe或者使用自带的SerDe。如果没有指定ROW FORMAT 或者ROW FORMAT DELIMITED，将会使用自带的SerDe。在建表的时候，用户还需要为表指定列，用户在指定表的列的同时也会指定自定义的SerDe，Hive通过SerDe确定表的具体的列的数据。
+用户在建表的时候可以自定义`SerDe`或者使用自带的`SerDe`。如果没有指定`ROW FORMAT` 或者`ROW FORMAT DELIMITED`，将会使用自带的`SerDe`。在建表的时候，用户还需要为表指定列，用户在指定表的列的同时也会指定自定义的`SerDe`，`Hive`通过`SerDe`确定表的具体的列的数据。
 
-SerDe是Serialize/Deserilize的简称， hive使用Serde进行行对象的序列与反序列化。
+`SerDe`是`Serialize/Deserilize`的简称， `hive`使用`Serde`进行行对象的序列与反序列化。
 
-（8）STORED AS指定存储文件类型
+（8）`STORED AS`指定存储文件类型
 
-常用的存储文件类型：SEQUENCEFILE（二进制序列文件）、TEXTFILE（文本）、RCFILE（列式存储格式文件）
+常用的存储文件类型：`SEQUENCEFILE`（二进制序列文件）、`TEXTFILE`（文本）、`RCFILE`（列式存储格式文件）
 
-如果文件数据是纯文本，可以使用STORED AS TEXTFILE。如果数据需要压缩，使用 STORED AS SEQUENCEFILE。
+如果文件数据是纯文本，可以使用`STORED AS TEXTFILE`。如果数据需要压缩，使用 `STORED AS SEQUENCEFILE`。
 
-（9）LOCATION ：指定表在HDFS上的存储位置。
+（9）`LOCATION` ：指定表在`HDFS`上的存储位置。
 
-（10）AS：后跟查询语句，根据查询结果创建表。
+（10）`AS`：后跟查询语句，根据查询结果创建表。
 
-（11）LIKE允许用户复制现有的表结构，但是不复制数据。
+（11）`LIKE`允许用户复制现有的表结构，但是不复制数据。
 
-hive会自动为每张表增加两个属性，last_modify_by:最后修改这个表的用户名，last_modify_time:最后修改这个表的时间,但是在展示表的信息时候并不会自动输出，
+`hive`会自动为每张表增加两个属性，`last_modify_by`:最后修改这个表的用户名，`last_modify_time`:最后修改这个表的时间,但是在展示表的信息时候并不会自动输出，
 
 ### 4.5，管理表
 
