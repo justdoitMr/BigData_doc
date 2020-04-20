@@ -1,9 +1,10 @@
 # [大数据学习笔记](https://github.com/justdoitMr/BigData_doc/tree/master/Notes)
+
 ***
 ## 前言
 ***
 1. [大数据学习路线和资源整理]()
-2. [大数据框架安装指南]()
+2. [大数据框架安装指南](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/%E5%A4%A7%E6%95%B0%E6%8D%AE%E6%A1%86%E6%9E%B6%E6%90%AD%E5%BB%BA.md>)
 
 ## 一，`Linux`整理
 
