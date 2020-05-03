@@ -43,20 +43,6 @@
 
 1. [`Jvm`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/JVM.md>)
 
-## 六，`Scala`整理
-
-## 四，`Kafka`笔记
-
-------
-
-1. [`Kafka`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Kafka.md>)
-
-## 五，`Jvm`整理
-
-------
-
-1. [`Jvm`初级](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/JVM.md>)
-
 ## 六，`Flume`整理
 
 1. [`Flume`基础](<https://github.com/justdoitMr/BigData_doc/blob/master/Notes/Flume.md>)
